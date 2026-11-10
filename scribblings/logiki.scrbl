@@ -36,7 +36,7 @@ list whose first element is an operator :
 @tabular[#:sep @hspace[2]
  (list (list @bold{operator} @bold{symbols})
        (list "conjunction" @racket[and AND ·])
-       (list "disjunction" @racket[or OR ＋ ➕])
+       (list "disjunction" @racket[or OR ＋])
        (list "negation" @racket[not NOT])
        (list "exclusive or" @racket[xor XOR ⊕])
        (list "implication" @racket[=> ⟹])
