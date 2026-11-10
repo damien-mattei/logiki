@@ -193,7 +193,8 @@
 ;; test if an operator is OR
 (define (OR-op? oper)
   ;;(or (equal? oper 'or) (equal? oper 'OR)))
-  (or (eqv? oper 'or) (eqv? oper 'OR)  (eqv? oper '➕))) ;; middle dot
+  ;; ＋ (U+FF0B , fullwidth plus) : the Or of boolean algebra ; ➕ (U+2795 , heavy plus) , the one before , still read
+  (or (eqv? oper 'or) (eqv? oper 'OR) (eqv? oper '＋) (eqv? oper '➕)))
 
 (define (XOR-op? oper)
   (or (eqv? oper 'xor) (eqv? oper 'XOR)  (eqv? oper '⊕))) ;; ⨁
@@ -340,7 +341,8 @@
 (define (alpha-op->symb-op-bool op)
   (cond
    ((AND-op? op) '·) ;; on Emacs Ctrl-X 8 RET unicode
-   ((OR-op? op) '➕)
+   #;((OR-op? op) '➕) ;; before : ➕ (U+2795 , heavy plus) , often displayed as an emoji
+   ((OR-op? op) '＋) ;; ＋ (U+FF0B , fullwidth plus)
    (else '?)))
 
 

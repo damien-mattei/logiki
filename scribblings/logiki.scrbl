@@ -36,7 +36,7 @@ list whose first element is an operator :
 @tabular[#:sep @hspace[2]
  (list (list @bold{operator} @bold{symbols})
        (list "conjunction" @racket[and AND ·])
-       (list "disjunction" @racket[or OR ➕])
+       (list "disjunction" @racket[or OR ＋ ➕])
        (list "negation" @racket[not NOT])
        (list "exclusive or" @racket[xor XOR ⊕])
        (list "implication" @racket[=> ⟹])
@@ -58,8 +58,8 @@ The results are formulas in prefix notation, or, for the procedures whose name c
 formulas in infix notation :
 @itemlist[
  @item{@racketfont{infix-symb} : with the symbols @racket[∧ ∨ ¬], for example @racketresult[((a ∧ ¬b) ∨ c)] ;}
- @item{@racketfont{infix-symb-bool} : with the symbols of boolean algebra @racket[· ➕] and a bar over a negated
-       variable, for example @racketresult[((a · d̅) ➕ (b · d))] ;}
+ @item{@racketfont{infix-symb-bool} : with the symbols of boolean algebra @racket[· ＋] (＋ is the fullwidth plus, U+FF0B) and a bar over a negated
+       variable, for example @racketresult[((a · d̅) ＋ (b · d))] ;}
  @item{@racketfont{infix} : with the words @racket[and or] and @racket[!] for the negation, for example
        @racketresult[((a and !b) or c)].}]
 
@@ -143,7 +143,7 @@ gives @racketresult[r].
 
 With the other notations :
 @racketblock[(infix-symb-bool-min-cnf '(or (and b d) (and a (not d))))]
-gives @racketresult[((a ➕ d) · (b ➕ d̅))], and
+gives @racketresult[((a ＋ d) · (b ＋ d̅))], and
 @racketblock[(infix-min-cnf '(or (and b d) (and a (not d))))]
 gives @racketresult[((a or d) and (b or !d))].}
 

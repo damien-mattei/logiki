@@ -349,7 +349,7 @@ ANNOTATION-ON
 
 ;; PHASE -1 : normalization of a formula , before the normal forms
 ;;
-;; the synonyms of the operators become and , or , not , ⊕ , => , <=> (AND , · , OR , ➕ , NOT , xor , XOR , ⟹ , ⟺) ,
+;; the synonyms of the operators become and , or , not , ⊕ , => , <=> (AND , · , OR , ＋ , ➕ , NOT , xor , XOR , ⟹ , ⟺) ,
 ;; because the phases below rebuild the forms with the operator of the input and test only and , or , not ;
 ;; the constants (T , F , #t , #f , True , False , ■ , □) are simplified away , a constant formula becomes #t or #f.
 ;; (before , (dnf-n-arity-simp '(not #t)) gave #t , (=> #f x) gave #f , and (not T) stayed in the normal forms)
@@ -899,7 +899,7 @@ ANNOTATION-ON
   (prefix->infix-symb  (minimal-dnf expr)))
 
 ;; (infix-symb-bool-min-dnf '{{(not a) and (not b) and (not c) and (not d)} or {(not a) and (not b) and (not c) and d} or {(not a) and (not b) and c and (not d)} or {(not a) and b and (not c) and d} or {(not a) and b and c and (not d)} or {(not a) and b and c and d} or {a and (not b) and (not c) and (not d)} or {a and (not b) and (not c) and d} or {a and (not b) and c and (not d)} or {c and (not d)}} )
-;; ((b̅ · c̅) ➕ (c · d̅) ➕ (a̅ · b · d))
+;; ((b̅ · c̅) ＋ (c · d̅) ＋ (a̅ · b · d))
 (define (infix-symb-bool-min-dnf expr)
   (prefix->infix-symb-bool  (minimal-dnf expr)))
 

@@ -1,6 +1,6 @@
 #lang reader SRFI-105
 
-;; raco test : random formulas with all the synonyms of the operators (AND · OR ➕ NOT XOR ⊕ ⟹ ⟺ ...) and the
+;; raco test : random formulas with all the synonyms of the operators (AND · OR ＋ ➕ NOT XOR ⊕ ⟹ ⟺ ...) and the
 ;; constants (T F #t #f) , on 3 to 5 variables , with three sets of names of variables (a b c d e , B₁₂ x10 x2 Ci B₃ ,
 ;; a A b B c) : dnf , cnf , dnf-n-arity-simp , cnf-n-arity-simp , minimal-dnf , minimal-cnf , maximal-dnf and the infix
 ;; results checked against the truth table and the normal form , and the minimality up to 4 variables.
@@ -172,7 +172,7 @@
 	 (exec {op <- (car e)} {xs <- (map (λ (x) (truth x env)) (cdr e))})
 	 ((memq op '(not NOT)) (not (car xs)))
 	 ((memq op '(and AND ·)) (andmap values xs))
-	 ((memq op '(or OR ➕)) (ormap values xs))
+	 ((memq op '(or OR ＋ ➕)) (ormap values xs))
 	 ((memq op '(xor XOR ⊕)) (odd? (count values xs)))
 	 ((memq op '(=> ⟹)) (or (not (car xs)) (cadr xs)))
 	 ((memq op '(<=> ⟺)) (eq? (car xs) (cadr xs)))
@@ -195,7 +195,7 @@
   (condx ((or {depth = 0} {(random 4) = 0})
 	  (condx ({(random 12) = (constants)} (rnd '(T F #t #f)))
 		 (else (let ((v (rnd (take (all-vars) nv)))) (if {(random 2) = 0} v (list (rnd (if (synonyms) '(not NOT) '(not))) v))))))
-	 (exec {op <- (rnd (if (synonyms) '(and AND · or OR ➕ not NOT xor XOR ⊕ => ⟹ <=> ⟺) '(and or not ⊕ => <=>)))})
+	 (exec {op <- (rnd (if (synonyms) '(and AND · or OR ＋ ➕ not NOT xor XOR ⊕ => ⟹ <=> ⟺) '(and or not ⊕ => <=>)))})
 	 ((memq op '(not NOT)) (list op (random-formula {depth - 1} nv)))
 	 ((memq op '(=> ⟹ <=> ⟺)) (list op (random-formula {depth - 1} nv) (random-formula {depth - 1} nv)))
 	 (else (cons op (build-list {2 + (random 2)} (λ (i) (random-formula {depth - 1} nv)))))))
@@ -231,7 +231,7 @@
 	       {operands <- (let loop ((l e)) (if (null? l) '() (cons (car l) (if (null? (cdr l)) '() (loop (cddr l))))))}
 	       {vals <- (map (λ (x) (infix-truth x env)) operands)})
 	 ((memq op '(∧ · and)) (andmap values vals))
-	 ((memq op '(∨ ➕ or)) (ormap values vals))
+	 ((memq op '(∨ ＋ or)) (ormap values vals))
 	 (else (error "infix-truth : unknown operator" op e))))
 
 (define (infix-table e nv)

@@ -5,8 +5,13 @@ Symbolic computation of propositional logic, written in [Scheme+](https://github
 - disjunctive and conjunctive normal forms ;
 - **minimal** disjunctive and conjunctive normal forms, with the Quine-McCluskey and Petrick methods ;
 - formulas in prefix or in infix notation (`{a and not b or c}`), with the operators `and or not xor => <=>` and their
-  symbols `· ➕ ⊕ ⟹ ⟺` ;
+  symbols `· ＋ ⊕ ⟹ ⟺` ;
 - results in prefix notation, or in infix notation with the symbols `∧ ∨ ¬`, the symbols of boolean algebra, or words.
+
+## Changes of version 21.1
+
+The Or of the notation of boolean algebra (`infix-symb-bool-min-dnf` ...) is now ＋ (U+FF0B , fullwidth plus) :
+`((a ＋ d) · (b ＋ d̅))`. ➕ (U+2795 , heavy plus) , often displayed as an emoji , is still read.
 
 ## Installation
 
@@ -32,7 +37,7 @@ displays `((a ∨ d) ∧ (b ∨ ¬d))`.
 | `minimal-cnf` | `'(or (and b d) (and a (not d)))` | `(and (or a d) (or b (not d)))` |
 | `cnf-infix-symb` (not minimal) | `'(or (and b d) (and a (not d)))` | `((a ∨ b) ∧ (a ∨ d) ∧ (b ∨ ¬d))` |
 | `infix-symb-min-dnf` | `'(⊕ (· B1 B0) (· C1 (⊕ B1 B0)))` | `((B0 ∧ B1) ∨ (B0 ∧ C1) ∨ (B1 ∧ C1))` |
-| `infix-symb-bool-min-cnf` | `'(or (and b d) (and a (not d)))` | `((a ➕ d) · (b ➕ d̅))` |
+| `infix-symb-bool-min-cnf` | `'(or (and b d) (and a (not d)))` | `((a ＋ d) · (b ＋ d̅))` |
 | `infix-min-cnf` | `'(or (and b d) (and a (not d)))` | `((a or d) and (b or !d))` |
 
 The minimal conjunctive form is computed with the Quine-McCluskey method on the maxterms : the maxterms of a function
@@ -54,7 +59,7 @@ raco test tests
 `minimal-cnf` to a computation by brute force on the 256 functions of 3 variables and on 3000 functions of 4 variables,
 then checks `minimal-dnf`, `minimal-cnf` and `maximal-dnf` on 1200 random formulas (`and or not ⊕ => <=>`) against
 their truth table. `tests/check-formulas.rkt` checks all the procedures and the infix results on 2100 random formulas
-written with all the synonyms of the operators (`AND · OR ➕ NOT XOR ⟹ ⟺`) and the constants (`T F #t #f`), with
+written with all the synonyms of the operators (`AND · OR ＋ NOT XOR ⟹ ⟺`) and the constants (`T F #t #f`), with
 names of variables such as `B₁₂`, `x10`, and `a` and `A` together.
 
 ## License
