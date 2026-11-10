@@ -11,7 +11,7 @@ Symbolic computation of propositional logic, written in [Scheme+](https://github
 ## Changes of version 21.1
 
 The Or of the notation of boolean algebra (`infix-symb-bool-min-dnf` ...) is now ＋ (U+FF0B , fullwidth plus) :
-`((a ＋ d) · (b ＋ d̅))`. ➕ (U+2795 , heavy plus) , often displayed as an emoji , is still read.
+`((a ＋ d) · (b ＋ d̅))`. The heavy plus used before (U+2795 , often displayed as an emoji) is still read.
 
 ## Installation
 
