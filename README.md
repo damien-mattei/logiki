@@ -4,9 +4,22 @@ Symbolic computation of propositional logic, written in [Scheme+](https://github
 
 - disjunctive and conjunctive normal forms ;
 - **minimal** disjunctive and conjunctive normal forms, with the Quine-McCluskey and Petrick methods ;
+- maximal (canonical) disjunctive and conjunctive normal forms ;
+- truth table, functions given by the numbers of their minterms or maxterms, tautology, equivalence, models ;
 - formulas in prefix or in infix notation (`{a and not b or c}`), with the operators `and or not xor => <=>` and their
   symbols `· ＋ ⊕ ⟹ ⟺` ;
 - results in prefix notation, or in infix notation with the symbols `∧ ∨ ¬`, the symbols of boolean algebra, or words.
+
+## Changes of version 21.2
+
+The truth table : `truth-table`, `display-truth-table`, `formula-value`, `minterm-numbers`, `maxterm-numbers`, and the
+functions given by the numbers of their minterms or maxterms, `minterms->formula`, `maxterms->formula`,
+`minimal-dnf-of-minterms`. The maximal conjunctive normal form `maximal-cnf`, and `maximal-dnf` takes any formula.
+The predicates `tautology?`, `antilogy?`, `satisfiable?`, `equivalent?`, `implies?`, and `models`.
+
+`minimal-dnf` and `minimal-cnf` find the minterms in two ways : by the disjunctive normal form when the distribution
+gives few terms (as before, fast even with 20 variables), otherwise on the truth table. They are no more slow for the
+formulas with `⊕` or `<=>` whose normal form by distribution is big (before, several seconds with 4 variables).
 
 ## Changes of version 21.1
 
@@ -55,7 +68,7 @@ The manual is in `scribblings/logiki.scrbl` and, once the package is installed, 
 raco test tests
 ```
 
-`tests/logic-test.rkt` runs the 16 tests of `(logic-test)`. `tests/check-petrick.rkt` compares `minimal-dnf` and
+`tests/logic-test.rkt` runs the 23 tests of `(logic-test)`. `tests/check-petrick.rkt` compares `minimal-dnf` and
 `minimal-cnf` to a computation by brute force on the 256 functions of 3 variables and on 3000 functions of 4 variables,
 then checks `minimal-dnf`, `minimal-cnf` and `maximal-dnf` on 1200 random formulas (`and or not ⊕ => <=>`) against
 their truth table. `tests/check-formulas.rkt` checks all the procedures and the infix results on 2100 random formulas

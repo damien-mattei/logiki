@@ -82,11 +82,23 @@ The disjunctive normal form, with operators of any number of arguments, simplifi
 @defproc[(cnf-n-arity-simp [formula any/c]) any/c]{
 The conjunctive normal form, with operators of any number of arguments, simplified (tautologies, useless clauses).}
 
-@defproc[(maximal-dnf [disjunctive-form any/c]) any/c]{
-The maximal disjunctive normal form of a formula in disjunctive normal form : the disjunction of its minterms, each one
-with all the variables, once.
+@defproc[(maximal-dnf [formula any/c]) any/c]{
+The maximal (canonical) disjunctive normal form of any formula : the disjunction of its minterms, each one with all
+the variables, once.
 @racketblock[(maximal-dnf '(or (and a b) c))]
 gives @racketresult[(or (and a b c) (and a b (not c)) (and a (not b) c) (and (not a) b c) (and (not a) (not b) c))].}
+
+@defproc[(maximal-cnf [formula any/c]) any/c]{
+The maximal (canonical) conjunctive normal form of any formula : the conjunction of its maxterms, each one with all
+the variables, once.
+@racketblock[(maximal-cnf '(or (and a b) c))]
+gives @racketresult[(and (or a b c) (or a (not b) c) (or (not a) b c))].}
+
+@deftogether[(@defproc[(infix-symb-max-dnf [formula any/c]) any/c]
+              @defproc[(infix-symb-max-cnf [formula any/c]) any/c])]{
+The maximal forms in infix notation.
+@racketblock[(infix-symb-max-cnf '(<=> a b))]
+gives @racketresult[((a ∨ ¬b) ∧ (¬a ∨ b))].}
 
 @deftogether[(@defproc[(dnf-infix-symb [formula any/c]) any/c]
               @defproc[(dnf-infix [formula any/c]) any/c]
@@ -151,8 +163,10 @@ gives @racketresult[((a or d) and (b or !d))].}
 
 The minimal disjunctive form is computed with the method of Quine and McCluskey :
 @itemlist[#:style 'ordered
- @item{the formula is put in disjunctive normal form, and its terms are expanded in minterms : the conjunctions of all
-       the variables, written in binary, @racketresult[(1 0 x 1)] standing for @racketresult[(a ∧ ¬b ∧ d)] ;}
+ @item{the minterms of the formula are found : the conjunctions of all the variables, written in binary,
+       @racketresult[(1 0 x 1)] standing for @racketresult[(a ∧ ¬b ∧ d)]. They come from the terms of the disjunctive
+       normal form when the distribution gives few terms, otherwise from the truth table : the distribution explodes
+       with the structure of the formula, the truth table with the number of variables (2@superscript{n} lines) ;}
  @item{the minterms are unified two by two, by groups of the same weight, until the prime implicants ;}
  @item{the essential prime implicants are found with the table of the prime implicants and of the minterms ;}
  @item{if they do not express all the minterms, the method of Petrick chooses the cheapest set of non essential prime
@@ -164,6 +178,65 @@ negation, read on the truth table of the function. The minimal conjunctive form 
 (De Morgan) of the minimal disjunctive form of its negation.
 
 The number of minterms grows as 2@superscript{n} with the number n of variables.
+
+@section{Truth table}
+
+@defproc[(formula-value [formula any/c] [environment list?]) boolean?]{
+The value of a formula for an environment, an association list of the variables and their boolean values.
+@racketblock[(formula-value '(=> a (⊕ b T)) '((a . #t) (b . #f)))]
+gives @racket[#t].}
+
+@defproc[(truth-table [formula any/c]) list?]{
+The truth table of a formula : the list of its lines, each one a pair of an assignment of the variables and of the
+value of the formula. The variables are in alphabetic order, the first one being the most significant.
+@racketblock[(truth-table '(=> a b))]
+gives @racketresult[(((#f #f) . #t) ((#f #t) . #t) ((#t #f) . #f) ((#t #t) . #t))].}
+
+@defproc[(display-truth-table [formula any/c]) void?]{
+Displays the truth table of a formula. @racket[(display-truth-table '(=> a b))] displays :
+@verbatim|{
+a b | (=> a b)
+0 0 | 1
+0 1 | 1
+1 0 | 0
+1 1 | 1
+}|}
+
+@deftogether[(@defproc[(minterm-numbers [formula any/c]) list?]
+              @defproc[(maxterm-numbers [formula any/c]) list?])]{
+The numbers of the lines of the truth table where the formula is true (its minterms), where it is false (its
+maxterms). @racket[(minterm-numbers '(=> a b))] gives @racketresult[(0 1 3)] and
+@racket[(maxterm-numbers '(=> a b))] gives @racketresult[(2)].}
+
+@deftogether[(@defproc[(minterms->formula [numbers list?] [variables list?]) any/c]
+              @defproc[(maxterms->formula [numbers list?] [variables list?]) any/c])]{
+The function given by the numbers of its minterms, Σm(...), or of its maxterms, ΠM(...), in canonical form.
+@racketblock[(minterms->formula '(0 1 3) '(a b))]
+gives @racketresult[(or (and (not a) (not b)) (and (not a) b) (and a b))], and
+@racketblock[(maxterms->formula '(2) '(a b))]
+gives @racketresult[(or (not a) b)].}
+
+@defproc[(minimal-dnf-of-minterms [numbers list?] [variables list?]) any/c]{
+The minimal disjunctive normal form of the function given by the numbers of its minterms.
+@racketblock[(minimal-dnf-of-minterms '(0 1 2 5 6 7) '(a b c))]
+gives @racketresult[(or (and a b) (and (not a) (not c)) (and (not b) c))].}
+
+@deftogether[(@defproc[(tautology? [formula any/c]) boolean?]
+              @defproc[(antilogy? [formula any/c]) boolean?]
+              @defproc[(satisfiable? [formula any/c]) boolean?])]{
+Is the formula always true, always false, true for one assignment at least ?
+@racket[(tautology? '(=> (and (=> p q) p) q))] gives @racket[#t].}
+
+@deftogether[(@defproc[(equivalent? [formula1 any/c] [formula2 any/c]) boolean?]
+              @defproc[(implies? [formula1 any/c] [formula2 any/c]) boolean?])]{
+Have the two formulas the same value for every assignment of their variables ? Is the second one true each time the
+first one is ? @racket[(equivalent? '(=> a b) '(or (not a) b))] gives @racket[#t], and
+@racket[(implies? 'a '(and a b))] gives @racket[#f].}
+
+@defproc[(models [formula any/c]) list?]{
+The models of a formula : the assignments that make it true, as association lists.
+@racketblock[(models '(and a (not b)))]
+gives @racketresult[(((a . #t) (b . #f)))].}
 
 @section{Conversions}
 
@@ -181,15 +254,15 @@ A formula with binary operators written with operators of any number of argument
 @section{Tests}
 
 @defproc[(logic-test) boolean?]{
-Runs 16 tests : normal forms and minimal forms of formulas, compared to their exact result, with
+Runs 23 tests : normal forms, minimal forms and maximal forms of formulas, compared to their exact result, with
 @racketresult[EXACT] or @racketresult[DIFFER] displayed for each one. Returns @racket[#t] if all are exact.}
 
 The directory @filepath{tests} of the package contains @filepath{logic-test.rkt}, and @filepath{check-petrick.rkt} which
 compares @racket[minimal-dnf] and @racket[minimal-cnf] to a computation by brute force on the 256 functions of 3
 variables and on 3000 functions of 4 variables, then checks @racket[minimal-dnf], @racket[minimal-cnf] and
 @racket[maximal-dnf] on 1200 random formulas against their truth table, and @filepath{check-formulas.rkt} which checks
-all these procedures and the infix results on 2100 random formulas written with all the synonyms of the operators and
-the constants, with three sets of names of variables (@racket[a b c d e], @racket[B₁₂ x10 x2 Ci B₃],
+all the procedures of this manual and the infix results on 2100 random formulas written with all the synonyms of the
+operators and the constants, with three sets of names of variables (@racket[a b c d e], @racket[B₁₂ x10 x2 Ci B₃],
 @racket[a A b B c]) : @exec{raco test tests}.
 
 @section{License}

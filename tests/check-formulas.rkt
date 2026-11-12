@@ -2,22 +2,22 @@
 
 ;; raco test : random formulas with all the synonyms of the operators (AND · OR ＋ ➕ NOT XOR ⊕ ⟹ ⟺ ...) and the
 ;; constants (T F #t #f) , on 3 to 5 variables , with three sets of names of variables (a b c d e , B₁₂ x10 x2 Ci B₃ ,
-;; a A b B c) : dnf , cnf , dnf-n-arity-simp , cnf-n-arity-simp , minimal-dnf , minimal-cnf , maximal-dnf and the infix
-;; results checked against the truth table and the normal form , and the minimality up to 4 variables.
-;; The test fails if one result is wrong. A formula whose check takes more than 3 s is skipped (its normal form ,
-;; computed by distribution , is too big : a slowness , not an error).
+;; a A b B c) : dnf , cnf , dnf-n-arity-simp , cnf-n-arity-simp , minimal-dnf , minimal-cnf , maximal-dnf , maximal-cnf ,
+;; the infix results , truth-table , minterms->formula , maxterms->formula , the predicates and the models checked
+;; against the truth table and the normal form , and the minimality up to 4 variables.
+;; The test fails if one result is wrong. The normal forms computed by distribution (dnf , cnf , dnf-n-arity-simp ,
+;; cnf-n-arity-simp) are skipped for a formula if they take more than 3 s (a slowness , not an error).
 
 (module check-formulas racket
 
 (require Scheme+)
 (require logiki)
-(require (only-in srfi/69 hash-table-keys hash-table-delete!))
 
 (define (bits m n)
   (build-list n (λ (i) (if (bitwise-bit-set? m {n - 1 - i}) 1 0))))
 
 ;; the expression of a function given by the list of its minterms
-(define (minterms->formula mts vars)
+(define (bench-minterms->formula mts vars)
   {n <- (length vars)}
   {terms <- (map (λ (m)
 		   (cons 'and (map (λ (v b) (if {b = 1} v (list 'not v)))
@@ -117,7 +117,7 @@
 
 ;; one call of minimal-dnf , checked
 (define (check-one mts vars)
-  {f <- (minterms->formula mts vars)}
+  {f <- (bench-minterms->formula mts vars)}
   {res <- (with-handlers ((exn:fail? (λ (e) (list 'ERROR (exn-message e)))))
 	    (minimal-dnf f))}
   {status <- (condx ((and (pair? res) (eq? (car res) 'ERROR)) 'error)
@@ -150,7 +150,7 @@
 ;; one call of minimal-cnf , checked : its minimal cost is the minimal cost of the disjunctive form of the negation
 (define (check-one-cnf mts vars)
   {n <- (length vars)}
-  {f <- (minterms->formula mts vars)}
+  {f <- (bench-minterms->formula mts vars)}
   {res <- (with-handlers ((exn:fail? (λ (e) (list 'ERROR (exn-message e)))))
 	    (minimal-cnf f))}
   {status <- (condx ((and (pair? res) (eq? (car res) 'ERROR)) 'error)
@@ -238,7 +238,9 @@
   {vs <- (take (all-vars) nv)}
   (map (λ (m) (infix-truth e (map (λ (v b) (cons v {b = 1})) vs (bits m nv)))) (range {2 ** nv})))
 
-(define (check e nv minimality?)
+;; the procedures computed on the truth table (no limit of time) : the minimal forms , the maximal forms , the truth
+;; table , the functions given by numbers , the predicates and the models
+(define (check-by-table e nv minimality?)
   {tb <- (table e nv)}
   {mts <- (minterms-of-table tb)}
   {bad <- '()}
@@ -246,22 +248,16 @@
   (define (try thunk) (with-handlers ((exn:fail? (λ (x) (list 'ERROR (exn-message x))))) (thunk)))
   (define (err? r) (and (pair? r) (eq? (car r) 'ERROR)))
   (define (same? r) (equal? (table r nv) tb))
-  ;; dnf and cnf take binary operators
-  {eb <- (try (λ () (n-arity-operation->binary-operation e)))}
-  (for-each (λ (name f form?)
-	      {r <- (try (λ () (f eb)))}
-	      (condx ((err? r) (note (string->symbol (format "~a-error" name)) r))
-		     ((not (form? r)) (note (string->symbol (format "~a-not-normal-form" name)) r))
-		     ((not (same? r)) (note (string->symbol (format "~a-wrong" name)) r))))
-	    '(dnf cnf) (list dnf cnf) (list nested-dnf? nested-cnf?))
+  (define (kind name suffix) (string->symbol (format "~a-~a" name suffix)))
+  ;; the minimal forms
   (for-each (λ (name f form?)
 	      {r <- (try (λ () (f e)))}
-	      (condx ((err? r) (note (string->symbol (format "~a-error" name)) r))
-		     ((not (form? r)) (note (string->symbol (format "~a-not-normal-form" name)) r))
-		     ((not (same? r)) (note (string->symbol (format "~a-wrong" name)) r))))
-	    '(dnf-n-arity-simp cnf-n-arity-simp minimal-dnf minimal-cnf)
-	    (list dnf-n-arity-simp cnf-n-arity-simp minimal-dnf minimal-cnf)
-	    (list dnf? cnf? dnf? cnf?))
+	      (condx ((err? r) (note (kind name "error") r))
+		     ((not (form? r)) (note (kind name "not-normal-form") r))
+		     ((not (same? r)) (note (kind name "wrong") r))))
+	    '(minimal-dnf minimal-cnf)
+	    (list minimal-dnf minimal-cnf)
+	    (list dnf? cnf?))
   (when minimality?
     {r <- (try (λ () (minimal-dnf e)))}
     (when (and (not (err? r)) (same? r) (cost<? (minimal-cost mts nv) (cost r))) (note 'minimal-dnf-not-minimal r))
@@ -272,28 +268,103 @@
   ;; the infix results
   (for-each (λ (name f)
 	      {r <- (try (λ () (f e)))}
-	      (condx ((err? r) (note (string->symbol (format "~a-error" name)) r))
+	      (condx ((err? r) (note (kind name "error") r))
 		     (exec {it <- (try (λ () (infix-table r nv)))})
-		     ((err? it) (note (string->symbol (format "~a-unreadable" name)) (list r it)))
-		     ((not (equal? it tb)) (note (string->symbol (format "~a-wrong" name)) r))))
-	    '(infix-symb-min-dnf infix-symb-min-cnf infix-symb-bool-min-dnf infix-symb-bool-min-cnf infix-min-dnf infix-min-cnf dnf-infix-symb cnf-infix-symb)
-	    (list infix-symb-min-dnf infix-symb-min-cnf infix-symb-bool-min-dnf infix-symb-bool-min-cnf infix-min-dnf infix-min-cnf dnf-infix-symb cnf-infix-symb))
-  ;; maximal-dnf of the simplified dnf
-  {d <- (try (λ () (dnf-n-arity-simp e)))}
-  (unless (err? d)
-    {r <- (try (λ () (maximal-dnf d)))}
-    (condx ((err? r) (note 'maximal-dnf-error r))
-	   ((not (dnf? r)) (note 'maximal-dnf-not-normal-form r))
-	   ((not (same? r)) (note 'maximal-dnf-wrong r))))
+		     ((err? it) (note (kind name "unreadable") (list r it)))
+		     ((not (equal? it tb)) (note (kind name "wrong") r))))
+	    '(infix-symb-min-dnf infix-symb-min-cnf infix-symb-bool-min-dnf infix-symb-bool-min-cnf infix-min-dnf infix-min-cnf infix-symb-max-dnf infix-symb-max-cnf)
+	    (list infix-symb-min-dnf infix-symb-min-cnf infix-symb-bool-min-dnf infix-symb-bool-min-cnf infix-min-dnf infix-min-cnf infix-symb-max-dnf infix-symb-max-cnf))
+  ;; the variables of the formula as logiki sees them , and its truth table
+  {vs <- (try (λ () (collect-variables e)))}
+  {tt <- (try (λ () (truth-table e)))}
+  (condx ((err? tt) (note 'truth-table-error tt))
+	 ((not {(length tt) = 2 ** (length vs)}) (note 'truth-table-size tt))
+	 ((not (andmap (λ (line) (eq? (cdr line) (truth e (map cons vs (car line))))) tt))
+	  (note 'truth-table-wrong tt)))
+  ;; the maximal forms : right , each term or clause with all the variables , once , as many as the lines of the table
+  (for-each (λ (name f form? operator numbers)
+	      {r <- (try (λ () (f e)))}
+	      {ns <- (try (λ () (numbers e)))}
+	      (condx ((err? r) (note (kind name "error") r))
+		     ((err? ns) (note (kind name "numbers-error") ns))
+		     ((not (form? r)) (note (kind name "not-normal-form") r))
+		     ((not (same? r)) (note (kind name "wrong") r))
+		     ((memq r '(#t #f)) (unless {(null? ns) or (null? vs)} (note (kind name "boolean") r)))
+		     (exec {terms <- (if (and (pair? r) (eq? (car r) operator)) (cdr r) (list r))})
+		     ((not (andmap (λ (t) {(literals-of-term t) = (length vs)}) terms)) (note (kind name "not-complete") r))
+		     ((not {(length terms) = (length (remove-duplicates terms))}) (note (kind name "duplicate") r))
+		     ((not {(length terms) = (length ns)}) (note (kind name "number-of-terms") r))))
+	    '(maximal-dnf maximal-cnf)
+	    (list maximal-dnf maximal-cnf)
+	    (list dnf? cnf?)
+	    '(or and)
+	    (list minterm-numbers maxterm-numbers))
+  ;; the function given back by the numbers of its minterms , of its maxterms
+  (for-each (λ (name numbers build)
+	      {r <- (try (λ () (build (numbers e) vs)))}
+	      (condx ((err? r) (note (kind name "error") r))
+		     ((not (same? r)) (note (kind name "wrong") r))))
+	    '(minterms->formula maxterms->formula)
+	    (list minterm-numbers maxterm-numbers)
+	    (list minterms->formula maxterms->formula))
+  ;; the predicates
+  (for-each (λ (name f expected)
+	      {r <- (try (λ () (f e)))}
+	      (condx ((err? r) (note (kind name "error") r))
+		     ((not (eq? r expected)) (note (kind name "wrong") r))))
+	    '(tautology? antilogy? satisfiable?)
+	    (list tautology? antilogy? satisfiable?)
+	    (list (andmap values tb) (not (ormap values tb)) (and (ormap values tb) #t)))
+  ;; the models : each one makes the formula true , as many as the true lines of the table of logiki
+  {ms <- (try (λ () (models e)))}
+  (condx ((err? ms) (note 'models-error ms))
+	 ((not (andmap (λ (m) (truth e m)) ms)) (note 'models-wrong ms))
+	 ((and (not (err? tt)) (not {(length ms) = (count cdr tt)})) (note 'models-number ms)))
+  ;; a formula is equivalent to its minimal forms , implied by each term of its minimal disjunctive form , and not
+  ;; equivalent to its negation
+  {equivalences <- (try (λ () (and (equivalent? e (minimal-dnf e))
+				   (equivalent? e (minimal-cnf e))
+				   (implies? (minimal-dnf e) e)
+				   (not (equivalent? e (list 'not e))))))}
+  (unless (eq? equivalences #t) (note 'equivalent?-wrong equivalences))
   bad)
 
-(define (check-in-time e nv minimality?)
+;; the normal forms computed by transformation (distribution) : they can be slow , under a limit of time
+(define (check-by-distribution e nv)
+  {tb <- (table e nv)}
+  {bad <- '()}
+  (define (note kind r) {bad <- (cons (list kind r) bad)})
+  (define (try thunk) (with-handlers ((exn:fail? (λ (x) (list 'ERROR (exn-message x))))) (thunk)))
+  (define (err? r) (and (pair? r) (eq? (car r) 'ERROR)))
+  (define (same? r) (equal? (table r nv) tb))
+  (define (kind name suffix) (string->symbol (format "~a-~a" name suffix)))
+  ;; dnf and cnf take binary operators
+  {eb <- (try (λ () (n-arity-operation->binary-operation e)))}
+  (for-each (λ (name f form? formula)
+	      {r <- (try (λ () (f formula)))}
+	      (condx ((err? r) (note (kind name "error") r))
+		     ((not (form? r)) (note (kind name "not-normal-form") r))
+		     ((not (same? r)) (note (kind name "wrong") r))))
+	    '(dnf cnf dnf-n-arity-simp cnf-n-arity-simp)
+	    (list dnf cnf dnf-n-arity-simp cnf-n-arity-simp)
+	    (list nested-dnf? nested-cnf? dnf? cnf?)
+	    (list eb eb e e))
+  (for-each (λ (name f)
+	      {r <- (try (λ () (f e)))}
+	      (condx ((err? r) (note (kind name "error") r))
+		     (exec {it <- (try (λ () (infix-table r nv)))})
+		     ((err? it) (note (kind name "unreadable") (list r it)))
+		     ((not (equal? it tb)) (note (kind name "wrong") r))))
+	    '(dnf-infix-symb cnf-infix-symb)
+	    (list dnf-infix-symb cnf-infix-symb))
+  bad)
+
+(define (check-by-distribution-in-time e nv)
   {result <- 'slow}
-  {th <- (thread (λ () {result <- (check e nv minimality?)}))}
+  {th <- (thread (λ () {result <- (check-by-distribution e nv)}))}
   (if (sync/timeout 3 th)
       result
       ($> (kill-thread th)
-	  (for-each (λ (k) (hash-table-delete! minterms-ht k)) (hash-table-keys minterms-ht))
 	  'slow)))
 
 {problems <- 0}
@@ -303,10 +374,14 @@
   {slow <- 0}
   {all <- (append-map (λ (i)
 			{e <- (random-formula depth nv)}
-			{r <- (check-in-time e nv minimality?)}
-			(if (eq? r 'slow) ($> {slow <- slow + 1} '()) (map (λ (b) (cons e b)) r)))
+			{r-table <- (check-by-table e nv minimality?)}
+			{r <- (check-by-distribution-in-time e nv)}
+			(map (λ (b) (cons e b))
+			     (if (eq? r 'slow)
+				 ($> {slow <- slow + 1} r-table)
+				 (append r-table r))))
 		      (range k))}
-  (printf "~a formulas , depth ~a , ~a variables : problems ~a , skipped ~a\n" k depth nv (length all) slow)
+  (printf "~a formulas , depth ~a , ~a variables : problems ~a , normal forms by distribution skipped (over 3 s) ~a\n" k depth nv (length all) slow)
   {problems <- problems + (length all)}
   (for-each (λ (kind)
 	      {ex <- (filter (λ (b) (eq? (cadr b) kind)) all)}

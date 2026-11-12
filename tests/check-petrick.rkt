@@ -11,14 +11,13 @@
 
 (require Scheme+)
 (require logiki)
-(require (only-in srfi/69 hash-table-keys hash-table-delete!))
 
 ;; the bits of the minterm m on n variables , the first variable is the most significant bit
 (define (bits m n)
   (build-list n (λ (i) (if (bitwise-bit-set? m {n - 1 - i}) 1 0))))
 
 ;; the expression of a function given by the list of its minterms
-(define (minterms->formula mts vars)
+(define (bench-minterms->formula mts vars)
   {n <- (length vars)}
   {terms <- (map (λ (m)
 		   (cons 'and (map (λ (v b) (if {b = 1} v (list 'not v)))
@@ -118,7 +117,7 @@
 
 ;; one call of minimal-dnf , checked
 (define (check-one mts vars)
-  {f <- (minterms->formula mts vars)}
+  {f <- (bench-minterms->formula mts vars)}
   {res <- (with-handlers ((exn:fail? (λ (e) (list 'ERROR (exn-message e)))))
 	    (minimal-dnf f))}
   {status <- (condx ((and (pair? res) (eq? (car res) 'ERROR)) 'error)
@@ -151,7 +150,7 @@
 ;; one call of minimal-cnf , checked : its minimal cost is the minimal cost of the disjunctive form of the negation
 (define (check-one-cnf mts vars)
   {n <- (length vars)}
-  {f <- (minterms->formula mts vars)}
+  {f <- (bench-minterms->formula mts vars)}
   {res <- (with-handlers ((exn:fail? (λ (e) (list 'ERROR (exn-message e)))))
 	    (minimal-cnf f))}
   {status <- (condx ((and (pair? res) (eq? (car res) 'ERROR)) 'error)
@@ -235,7 +234,7 @@
   (define (error? r) (and (pair? r) (eq? (car r) 'ERROR)))
   {r-dnf <- (try (λ () (minimal-dnf e)))}
   {r-cnf <- (try (λ () (minimal-cnf e)))}
-  {r-max <- (try (λ () (maximal-dnf (dnf-n-arity-simp e))))}
+  {r-max <- (try (λ () (maximal-dnf e)))}
   {bad <- '()}
   (condx ((error? r-dnf) {bad <- (cons (list 'minimal-dnf-error r-dnf) bad)})
 	 ((not (same-function? r-dnf mts vars4)) {bad <- (cons (list 'minimal-dnf-wrong r-dnf) bad)})
@@ -254,29 +253,15 @@
 	  {bad <- (cons (list 'maximal-dnf-not-complete r-max) bad)}))
   bad)
 
-;; a formula whose check takes more than 2 s is skipped : its normal form , computed by distribution , is too big (a
-;; slowness , not an error) ; the hash table of the minterms , left full by the computation stopped , is emptied
-(define (check-formula-in-time e)
-  {result <- 'slow}
-  {th <- (thread (λ () {result <- (check-formula e)}))}
-  (if (sync/timeout 2 th)
-      result
-      ($> (kill-thread th)
-	  (for-each (λ (k) (hash-table-delete! minterms-ht k)) (hash-table-keys minterms-ht))
-	  'slow)))
-
 (define (check-random-formulas k depth)
   (random-seed 2026)
-  {slow <- 0}
+  ;; no limit of time : the minimal and maximal forms are computed on the truth table (version 21.2)
   {all-bad <- (append-map (λ (i)
 			    {e <- (random-formula depth)}
-			    {r <- (check-formula-in-time e)}
-			    (if (eq? r 'slow)
-				($> {slow <- slow + 1} '())
-				(map (λ (b) (cons e b)) r)))
+			    (map (λ (b) (cons e b)) (check-formula e)))
 			  (range k))}
   (display "random formulas : ") (display k) (display " , depth ") (display depth) (display " , problems : ")
-  (display (length all-bad)) (display " , skipped (more than 2 s) : ") (display slow) (newline)
+  (display (length all-bad)) (newline)
   ;; the number of problems of each kind
   (for-each (λ (kind)
 	      (display "   ") (display kind) (display " : ") (display (count (λ (b) (eq? (cadr b) kind)) all-bad)) (newline))

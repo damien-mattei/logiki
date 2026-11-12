@@ -953,13 +953,274 @@ ANNOTATION-ON
       (first literals)
       (cons 'and literals)))
 
+;; the clause (maxterm) false for an assignment only
+;; (assignment->maxterm '(#t #f) '(a b)) -> '(or (not a) b)
+(define (assignment->maxterm assignment var-list)
+  {literals <- (map (λ (v b) (if b (list 'not v) v)) var-list assignment)}
+  (if (singleton-list? literals)
+      (first literals)
+      (cons 'or literals)))
+
+;; the assignment of the line k of the truth table of n variables (the first variable is the most significant bit)
+;; (number->assignment 5 3) -> '(#t #f #t)
+(define (number->assignment k n)
+  (build-list n (λ (i) (bitwise-bit-set? k {n - 1 - i}))))
+
+
+;; TRUTH TABLE
+
+;; the value of the equivalence of a list of values , (<=> a b c) is (<=> a (<=> b c)) as in normalize-formula
+(define (equiv-values vals)
+  (if (null? (rest vals))
+      (first vals)
+      (eq? (first vals) (equiv-values (rest vals)))))
+
+;; the value of any formula (all the operators and their synonyms , the constants) for an environment : an association
+;; list variable -> boolean
+;; (formula-value '(=> a (⊕ b T)) '((a . #t) (b . #f))) -> #t
+(define (formula-value expr env)
+  (condx ((is-True? expr) #t)
+	 ((is-False? expr) #f)
+	 ((symbol? expr) (let ((binding (assq expr env)))
+			   (if binding
+			       (cdr binding)
+			       (error "formula-value : variable without value :" expr))))
+	 (exec {op <- (operator expr)}
+	       {vals <- (map (λ (e) (formula-value e env)) (args expr))})
+	 ((NOT-op? op) (not (first vals)))
+	 ((AND-op? op) (andmap values vals))
+	 ((OR-op? op) (ormap values vals))
+	 ((XOR-op? op) (odd? (count values vals)))
+	 ({(IMPLIC-op? op) and (length vals) = 2} (or (not (first vals)) (second vals)))
+	 ({(EQUIV-op? op) and (length vals) >= 2} (equiv-values vals))
+	 (else (error "formula-value : unknown operator or bad number of arguments :" expr))))
+
+;; the truth table of a formula : the list of the lines (assignment . value) , the variables in the order of
+;; collect-variables , the first one being the most significant
+;; (truth-table '(=> a b)) -> '(((#f #f) . #t) ((#f #t) . #t) ((#t #f) . #f) ((#t #t) . #t))
+(define (truth-table expr)
+  {var-list <- (collect-variables expr)}
+  (map (λ (assignment)
+	 (cons assignment (formula-value expr (map cons var-list assignment))))
+       (all-assignments (length var-list))))
+
+;; display the truth table of a formula , with 0 and 1
+;; (display-truth-table '(=> a b))
+;; a b | (=> a b)
+;; 0 0 | 1
+;; 0 1 | 1
+;; 1 0 | 0
+;; 1 1 | 1
+(define (display-truth-table expr)
+  {names <- (map symbol->string (collect-variables expr))}
+  ;; a bit under the name of its variable
+  (define (display-bit b name)
+    (display (if b 1 0))
+    (display (make-string (string-length name) #\space)))
+  (for-each (λ (name) (display name) (display " ")) names)
+  (display "| ") (display expr) (newline)
+  (for-each (λ (line)
+	      (for-each display-bit (car line) names)
+	      (display "| ") (display (if (cdr line) 1 0)) (newline))
+	    (truth-table expr)))
+
+;; the numbers of the lines of the truth table where the formula is true : its minterms
+;; (minterm-numbers '(=> a b)) -> '(0 1 3)
+;; Two ways , that give the same numbers : the terms of the disjunctive normal form expanded (a cost that follows the
+;; number of minterms of the formula , whatever the number of variables) when this form is cheap by distribution ,
+;; otherwise the truth table (2^n lines for n variables , whatever the formula) : see by-distribution?
+(define (minterm-numbers expr)
+  (if (by-distribution? expr)
+      (dnf-minterm-numbers (dnf-n-arity-simp expr) (collect-variables expr))
+      (let ((table (truth-table expr)))
+	(filter-map (λ (line k) (and (cdr line) k))
+		    table
+		    (range (length table))))))
+
+;; the numbers of the minterms of a term of a disjunctive normal form : the variables of the term have their value ,
+;; the others take the two values
+;; (term-minterm-numbers '(and a (not c)) '(a b c)) -> '(4 6)
+(define (term-minterm-numbers term var-list)
+  {literals <- (if (or (symbol? term) (isNOT? term))
+		   (list term)
+		   (args term))}
+  (foldl (λ (v numbers)
+	   {bits <- (condx ((member v literals) '(1))
+			   ((member (list 'not v) literals) '(0))
+			   (else '(0 1)))}
+	   (append-map (λ (k) (map (λ (b) {2 * k + b}) bits))
+		       numbers))
+	 '(0)
+	 var-list))
+
+;; the numbers of the minterms of a formula in disjunctive normal form , in order
+;; (dnf-minterm-numbers '(or (and a (not c)) b) '(a b c)) -> '(2 3 4 6 7)
+(define (dnf-minterm-numbers disj-norm-form var-list)
+  (condx ((is-False? disj-norm-form) '())
+	 ((is-True? disj-norm-form) (range {2 ** (length var-list)}))
+	 (exec {terms <- (if (isOR? disj-norm-form)
+			     (args disj-norm-form)
+			     (list disj-norm-form))})
+	 (else (sort (remove-duplicates (append-map (λ (term) (term-minterm-numbers term var-list))
+						    terms))
+		     <))))
+
+;; the numbers of terms of the disjunctive and of the conjunctive normal forms that the distribution would give for a
+;; normalized formula , before any simplification , computed without building these forms :
+;; (terms of the DNF . clauses of the CNF) , each number limited to 10^9
+;; (distribution-sizes '(and (or a b) (or c d) (or e f))) -> '(8 . 3)
+(define (distribution-sizes expr)
+  (define (limited x) (min x 1000000000))
+  ;; a ⊕ b = (¬a ∧ b) ∨ (a ∧ ¬b) = (a ∨ b) ∧ (¬a ∨ ¬b)
+  (define (xor-sizes s1 s2)
+    (cons (limited {(cdr s1) * (car s2) + (car s1) * (cdr s2)})
+	  (limited {(cdr s1) * (cdr s2) + (car s1) * (car s2)})))
+  ;; a => b = ¬a ∨ b
+  (define (implies-sizes s1 s2)
+    (cons (limited {(cdr s1) + (car s2)})
+	  (limited {(car s1) * (cdr s2)})))
+  ;; a <=> b = (a => b) ∧ (b => a)
+  (define (equiv-sizes s1 s2)
+    (cons (limited {((cdr s1) + (car s2)) * ((cdr s2) + (car s1))})
+	  (limited {(car s1) * (cdr s2) + (car s2) * (cdr s1)})))
+  (condx ((not (pair? expr)) (cons 1 1)) ;; a variable or a constant
+	 (exec {op <- (operator expr)}
+	       {sizes <- (map distribution-sizes (args expr))})
+	 ((NOT-op? op) (cons (cdr (first sizes)) (car (first sizes))))
+	 ((AND-op? op) (cons (limited (apply * (map car sizes))) (limited (apply + (map cdr sizes)))))
+	 ((OR-op? op) (cons (limited (apply + (map car sizes))) (limited (apply * (map cdr sizes)))))
+	 ((XOR-op? op) (foldl (λ (s acc) (xor-sizes acc s)) (first sizes) (rest sizes)))
+	 ({(IMPLIC-op? op) and (length sizes) = 2} (implies-sizes (first sizes) (second sizes)))
+	 ((EQUIV-op? op) (foldr equiv-sizes (last sizes) (drop-right sizes 1))) ;; (<=> a (<=> b c))
+	 (else (cons 1 1))))
+
+;; over this number of terms , estimated by distribution-sizes , the disjunctive normal form is not computed by
+;; distribution but read on the truth table
+(define distribution-terms-limit 64)
+
+;; over this number of variables , no truth table (2^n lines)
+(define truth-table-variables-limit 16)
+
+;; Are the minterms of the formula found by the disjunctive normal form (distribution) , or by the truth table ?
+;; The distribution explodes with the structure of the formula , even with 4 variables , the truth table with the
+;; number of variables : the distribution is taken when it gives few terms , or when the truth table would be too big.
+(define (by-distribution? expr)
+  (or {(car (distribution-sizes (normalize-formula expr))) <= distribution-terms-limit}
+      {(length (collect-variables expr)) > truth-table-variables-limit}))
+
+;; the numbers of the lines of the truth table where the formula is false : its maxterms
+;; (maxterm-numbers '(=> a b)) -> '(2)
+(define (maxterm-numbers expr)
+  ;; the numbers that are not the ones of the minterms
+  {minterms <- (list->seteqv (minterm-numbers expr))}
+  (filter (λ (k) (not (set-member? minterms k)))
+	  (range {2 ** (length (collect-variables expr))})))
+
+;; check the numbers of minterms or maxterms and put them in order
+(define (check-term-numbers numbers var-list)
+  {limit <- 2 ** (length var-list)}
+  (for-each (λ (k)
+	      (unless {(exact-nonnegative-integer? k) and k < limit}
+		(error "minterms->formula , maxterms->formula : not the number of a line of the truth table :" k)))
+	    numbers)
+  (sort (remove-duplicates numbers) <))
+
+;; the function given by the numbers of its minterms , Σm(...) : the disjunction of these minterms
+;; (minterms->formula '(0 1 3) '(a b)) -> '(or (and (not a) (not b)) (and (not a) b) (and a b))
+(define (minterms->formula numbers var-list)
+  {n <- (length var-list)}
+  {numbers-in-order <- (check-term-numbers numbers var-list)}
+  (condx ((null? numbers-in-order) #f) ;; no minterm : the function is false
+	 ({n = 0} #t) ;; the line 0 of a table without variable
+	 (exec {terms <- (map (λ (k) (assignment->minterm (number->assignment k n) var-list))
+			      numbers-in-order)})
+	 ((singleton-list? terms) (first terms))
+	 (else (cons 'or terms))))
+
+;; the function given by the numbers of its maxterms , ΠM(...) : the conjunction of these maxterms , the maxterm k
+;; being the clause false on the line k of the truth table
+;; (maxterms->formula '(2) '(a b)) -> '(or (not a) b)
+(define (maxterms->formula numbers var-list)
+  {n <- (length var-list)}
+  {numbers-in-order <- (check-term-numbers numbers var-list)}
+  (condx ((null? numbers-in-order) #t) ;; no maxterm : the function is true
+	 ({n = 0} #f)
+	 (exec {clauses <- (map (λ (k) (assignment->maxterm (number->assignment k n) var-list))
+				numbers-in-order)})
+	 ((singleton-list? clauses) (first clauses))
+	 (else (cons 'and clauses))))
+
+
+;; MAXIMAL FORMS (canonical forms)
+
+;; maximal disjunctive normal form of any formula : the disjunction of its minterms , each one with all the
+;; variables , once
+;; (maximal-dnf '(or (and a b) c))
+;; -> '(or (and a b c) (and a b (not c)) (and a (not b) c) (and (not a) b c) (and (not a) (not b) c))
+(define (maximal-dnf expr)
+  (sort-expressions-in-operation-var-index (minterms->formula (minterm-numbers expr)
+							       (collect-variables expr))))
+
+;; maximal conjunctive normal form of any formula : the conjunction of its maxterms
+;; (maximal-cnf '(or (and a b) c)) -> '(and (or a b c) (or a (not b) c) (or (not a) b c))
+(define (maximal-cnf expr)
+  (sort-expressions-in-operation-var-index (maxterms->formula (maxterm-numbers expr)
+							       (collect-variables expr))))
+
+(define (infix-symb-max-dnf expr)
+  (prefix->infix-symb (maximal-dnf expr)))
+
+(define (infix-symb-max-cnf expr)
+  (prefix->infix-symb (maximal-cnf expr)))
+
+
+;; PREDICATES , by the truth table
+
+;; (tautology? '(or a (not a))) -> #t
+(define (tautology? expr)
+  (andmap cdr (truth-table expr)))
+
+;; (antilogy? '(and a (not a))) -> #t
+(define (antilogy? expr)
+  (not (ormap cdr (truth-table expr))))
+
+;; (satisfiable? '(and a (not b))) -> #t
+(define (satisfiable? expr)
+  (ormap cdr (truth-table expr)))
+
+;; the two formulas have the same value for every assignment of their variables
+;; (equivalent? '(=> a b) '(or (not a) b)) -> #t
+(define (equivalent? expr1 expr2)
+  (tautology? (list '<=> expr1 expr2)))
+
+;; the second formula is true each time the first one is
+;; (implies? '(and a b) 'a) -> #t
+(define (implies? expr1 expr2)
+  (tautology? (list '=> expr1 expr2)))
+
+;; the models of a formula : the assignments that make it true , as association lists variable -> boolean
+;; (models '(and a (not b))) -> '(((a . #t) (b . #f)))
+(define (models expr)
+  {var-list <- (collect-variables expr)}
+  (filter-map (λ (line)
+		(and (cdr line) (map cons var-list (car line))))
+	      (truth-table expr)))
+
+
 ;; minimal conjunctive normal form , with the Quine - Mc Cluskey method on the maxterms : the maxterms of a function are
 ;; the minterms of its negation , so the minimal CNF is the dual (De Morgan) of the minimal DNF of the negation.
-;; The maxterms are found on the truth table of the DNF of the function : the DNF of (not expr) would be computed by
-;; distributing a product of sums , which is exponential.
+;; The maxterms are read on the truth table of the function (maxterm-numbers).
 ;;
 ;; (minimal-cnf '(or (and b d) (and a (not d)))) -> '(and (or a d) (or b (not d)))
 (define (minimal-cnf expr)
+  {var-list <- (collect-variables expr)}
+  ;; the negation of the function : the disjunction of the minterms numbered as the maxterms of the function
+  (sort-expressions-in-operation-var-index
+   (dual-literals (minimal-dnf-of-minterms (maxterm-numbers expr) var-list))))
+
+;; before : the maxterms were found on the truth table of (dnf-n-arity-simp expr) , slow for some formulas because
+;; this disjunctive form is computed by distribution
+#;(define (minimal-cnf expr)
   {var-list <- (collect-variables expr)}
   {disj-norm-form <- (dnf-n-arity-simp expr)}
   ;; the maxterms : the assignments where the function is false
@@ -1892,7 +2153,8 @@ ANNOTATION-ON
 ;; uniq-sorted-expanded-var-terms = ((a b (not c)) (a b c) ((not a) b c) (a (not b) c) ((not a) (not b) c))
 ;; sorted-expanded-and-term = ((and a b (not c)) (and a b c) (and (not a) b c) (and a (not b) c) (and (not a) (not b) c))
 ;; '(or (and a b (not c)) (and a b c) (and (not a) b c) (and a (not b) c) (and (not a) (not b) c))
-(define (maximal-dnf disj-norm-form)
+;; before : maximal-dnf took a formula in disjunctive normal form only (now : any formula , by the truth table)
+#;(define (maximal-dnf disj-norm-form)
 
   (cond
    ((symbol? disj-norm-form) disj-norm-form)
@@ -2011,7 +2273,28 @@ ANNOTATION-ON
 ;;  (minimal-dnf '(or (and (not a) (not b) (not c) (not d)) (and (not a) (not b) (not c) d) (and (not a) (not b) c (not d)) (and (not a) b (not c) d)  (and (not a) b c (not d))  (and (not a) b c d)  (and a (not b) (not c) (not d)) (and a (not b) (not c) d)  (and a (not b) c (not d))   (and a b c (not d))))
 ;; -> '(or (and (not b) (not c)) (and c (not d)) (and (not a) b d))
 ;;
+;; Two ways (see by-distribution?) : the disjunctive normal form computed by distribution when it is cheap , as before
+;; the version 21.2 ; otherwise the minterms read on the truth table , because the distribution was slow for some
+;; formulas , even with 4 variables.
 (define (minimal-dnf expr)
+  {var-list <- (collect-variables expr)}
+  (if (by-distribution? expr)
+      (minimal-dnf-of-dnf (dnf-n-arity-simp expr) var-list)
+      (minimal-dnf-of-minterms (minterm-numbers expr) var-list)))
+
+;; minimal disjunctive normal form of the function given by the numbers of its minterms , Σm(...) , with the methods
+;; of Quine - Mc Cluskey and Petrick
+;; (minimal-dnf-of-minterms '(0 1 3) '(a b)) -> '(or (not a) b)
+(define (minimal-dnf-of-minterms numbers var-list)
+  ;; the disjunction of the minterms , or a boolean : a tautology of one variable , (or a (not a)) , would be taken
+  ;; for a simple form
+  (minimal-dnf-of-dnf (condx ((null? numbers) #f)
+			     ({(length (remove-duplicates numbers)) = 2 ** (length var-list)} #t)
+			     (else (minterms->formula numbers var-list)))
+		      var-list))
+
+;; minimal disjunctive normal form of a formula in disjunctive normal form , on the variables of the list
+(define (minimal-dnf-of-dnf disj-norm-form var-list)
 
   ;;(no-debug-region
   (declare min-expr-sorted
@@ -2030,18 +2313,19 @@ ANNOTATION-ON
 
   ;;{var-list <- (sort (remove-duplicates collected-vars) symbol-var-index<?)} ;; variable list , previously was : (collect-variables expr)
   ;; changed in maximal-dnf too
-  {var-list <-  (collect-variables expr)}
+  #;{var-list <-  (collect-variables expr)}
 
   (nodebug
    (dv var-list))
 
-  {disj-norm-form <- (dnf-n-arity-simp expr)} ;; disjunctive form
+  #;{disj-norm-form <- (dnf-n-arity-simp expr)} ;; disjunctive form
+
 
   (nodebug
    (display "minimal-dnf : ")
    (dv disj-norm-form))
 
-  {infix-disj-norm-form <- (dnf-infix-symb disj-norm-form)} ;; infix only used for display, not for computation
+  #;{infix-disj-norm-form <- (dnf-infix-symb disj-norm-form)} ;; infix only used for display, not for computation
 
 
   (if (not (pre-check-Quine-Mc-Cluskey disj-norm-form))
@@ -3508,6 +3792,117 @@ ANNOTATION-ON
 	 (display-nl "EXACT")
 	 ($>
 	  (display-nl "test 16 ******* DIFFER *******")
+	  (return #f)))
+     (newline)
+
+     ;; test 17 : maximal disjunctive form (the disjunction of the minterms) of a formula not in normal form
+     (display-nl "test 17")
+     {expr <- '{{a => b} and {b => c}}}
+     (display expr)
+     (display " = ")
+     {res-expr <- (infix-symb-max-dnf expr)}
+     (display-nl res-expr)
+     {res-expr-exact <- '((a ∧ b ∧ c) ∨ (¬a ∧ b ∧ c) ∨ (¬a ∧ ¬b ∧ c) ∨ (¬a ∧ ¬b ∧ ¬c))}
+     (if (equal? res-expr res-expr-exact)
+	 (display-nl "EXACT")
+	 ($>
+	  (display-nl "test 17 ******* DIFFER *******")
+	  (return #f)))
+     (newline)
+
+     ;; test 18 : maximal conjunctive form (the conjunction of the maxterms) of the same formula
+     (display-nl "test 18")
+     (display expr)
+     (display " = ")
+     {res-expr <- (infix-symb-max-cnf expr)}
+     (display-nl res-expr)
+     {res-expr-exact <- '((a ∨ ¬b ∨ c) ∧ (¬a ∨ b ∨ c) ∧ (¬a ∨ b ∨ ¬c) ∧ (¬a ∨ ¬b ∨ c))}
+     (if (equal? res-expr res-expr-exact)
+	 (display-nl "EXACT")
+	 ($>
+	  (display-nl "test 18 ******* DIFFER *******")
+	  (return #f)))
+     (newline)
+
+     ;; test 19 : the numbers of the minterms of the cyclic function of the tests 15 and 16 : the lines of its truth table
+     ;; where it is true
+     (display-nl "test 19")
+     {expr <- '(or (and (not a) (not b) (not c)) (and (not a) (not b) c) (and (not a) b (not c))
+                   (and a (not b) c) (and a b (not c)) (and a b c))}
+     (display "numbers of the minterms of ")
+     (display expr)
+     (display " = ")
+     {res-expr <- (minterm-numbers expr)}
+     (display-nl res-expr)
+     {res-expr-exact <- '(0 1 2 5 6 7)}
+     (if (equal? res-expr res-expr-exact)
+	 (display-nl "EXACT")
+	 ($>
+	  (display-nl "test 19 ******* DIFFER *******")
+	  (return #f)))
+     (newline)
+
+     ;; test 20 : minimal disjunctive form of the function given by the numbers of its minterms , Σm(0 1 2 5 6 7) : the
+     ;; result of the test 15
+     (display-nl "test 20")
+     {expr <- (minterms->formula '(0 1 2 5 6 7) '(a b c))}
+     (display expr)
+     (display " = ")
+     {res-expr <- (infix-symb-min-dnf expr)}
+     (display-nl res-expr)
+     {res-expr-exact <- '((a ∧ b) ∨ (¬a ∧ ¬c) ∨ (¬b ∧ c))}
+     (if (equal? res-expr res-expr-exact)
+	 (display-nl "EXACT")
+	 ($>
+	  (display-nl "test 20 ******* DIFFER *******")
+	  (return #f)))
+     (newline)
+
+     ;; test 21 : minimal conjunctive form of the function given by the numbers of its maxterms , ΠM(3 4) : the result
+     ;; of the test 16
+     (display-nl "test 21")
+     {expr <- (maxterms->formula '(3 4) '(a b c))}
+     (display expr)
+     (display " = ")
+     {res-expr <- (infix-symb-min-cnf expr)}
+     (display-nl res-expr)
+     {res-expr-exact <- '((a ∨ ¬b ∨ ¬c) ∧ (¬a ∨ b ∨ c))}
+     (if (equal? res-expr res-expr-exact)
+	 (display-nl "EXACT")
+	 ($>
+	  (display-nl "test 21 ******* DIFFER *******")
+	  (return #f)))
+     (newline)
+
+     ;; test 22 : a tautology : the modus ponens
+     (display-nl "test 22")
+     {expr <- '{{{p => q} and p} => q}}
+     (display "tautology? ")
+     (display expr)
+     (display " = ")
+     {res-expr <- (tautology? expr)}
+     (display-nl res-expr)
+     {res-expr-exact <- #t}
+     (if (equal? res-expr res-expr-exact)
+	 (display-nl "EXACT")
+	 ($>
+	  (display-nl "test 22 ******* DIFFER *******")
+	  (return #f)))
+     (newline)
+
+     ;; test 23 : a formula is equivalent to its minimal conjunctive form : the equivalence of the two is a tautology
+     (display-nl "test 23")
+     {expr <- (list '<=> '{{b and d} or {a and not d}} (minimal-cnf '{{b and d} or {a and not d}}))}
+     (display "tautology? ")
+     (display expr)
+     (display " = ")
+     {res-expr <- (tautology? expr)}
+     (display-nl res-expr)
+     {res-expr-exact <- #t}
+     (if (equal? res-expr res-expr-exact)
+	 (display-nl "EXACT")
+	 ($>
+	  (display-nl "test 23 ******* DIFFER *******")
 	  (return #f)))
      (newline)
 
